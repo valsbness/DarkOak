@@ -1,5 +1,5 @@
 /* DARK OAK — configura estos dos valores con los datos del proyecto Supabase. Nunca pongas aquí la service_role key. */
-const SUPABASE_URL = 'PEGA_AQUI_TU_PROJECT_URL';
+const SUPABASE_URL = 'https://pmlfrhxwkbrsonuuoxxp.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_6QpLlRJhQmw_QkvaGH1SNA_2GamMQZC';
 const configured = SUPABASE_URL.startsWith('https://') && !SUPABASE_URL.includes('PEGA_AQUI') && !SUPABASE_ANON_KEY.includes('PEGA_AQUI');
 const $ = s => document.querySelector(s); let db=null, user=null, members=[], dues=[], notes=[], selectedWeek=weekStart(new Date());
