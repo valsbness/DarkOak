@@ -27,7 +27,21 @@
 .vault-slot-actions .vault-edit{font-size:11px}
 .vault-log-actor{text-transform:none}
 @media(max-width:760px){.vault-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.vault-slot{min-height:120px}}
-</style></head><body>
+</style>
+<style>
+/* Caja fuerte: modal centrado y registro con desplazamiento interno */
+#modalRoot .modal-backdrop{position:fixed!important;inset:0!important;z-index:99999!important;display:flex!important;align-items:center!important;justify-content:center!important;padding:20px!important;background:rgba(0,0,0,.72)!important;overflow-y:auto!important}
+#modalRoot .modal{margin:auto!important;max-height:calc(100vh - 40px)!important;overflow-y:auto!important}
+#vaultLog{max-width:100%;min-width:0}
+.vault-log-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;flex-wrap:wrap}
+.vault-log-tools input{width:min(360px,100%);min-width:180px;padding:10px 12px;border:1px solid var(--border,#493722);border-radius:8px;background:#100e0b;color:var(--text,#f2e8d9)}
+.vault-log-scroll{max-height:320px;overflow:auto;overscroll-behavior:contain;border-radius:8px}
+.vault-log-scroll table{min-width:850px;width:100%;border-collapse:collapse}
+.vault-log-scroll thead th{position:sticky;top:0;z-index:1;background:#20170f}
+.vault-log-scroll td,.vault-log-scroll th{white-space:nowrap}
+@media(max-width:700px){#modalRoot .modal-backdrop{padding:10px!important}.vault-log-scroll{max-height:280px}.vault-log-tools{align-items:stretch;flex-direction:column}}
+</style>
+</head><body>
 <div id="authView" class="auth"><div class="authcard"><div class="sigil">MAFIA 12</div><h1>DARK OAK</h1><p>Registro interno de la organización. Acceso reservado a jefes y subjefes autorizados.</p><div id="configWarning" class="notice">Configura Supabase en <b>app.js</b> y aplica <b>schema.sql</b> antes de iniciar sesión.</div><form id="loginForm"><div class="field"><label>Correo autorizado</label><input id="email" type="email" required autocomplete="username" placeholder="admin@ejemplo.com"></div><div class="field"><label>Contraseña</label><input id="password" type="password" required autocomplete="current-password" placeholder="••••••••"></div><button class="btn primary" style="width:100%" type="submit">Entrar al registro</button></form><p class="footnote">Las cuentas se crean desde el panel de administración de Supabase. No hay registro público.</p><div id="authMsg" class="footnote"></div></div></div>
 <div id="appView" class="layout hidden"><aside class="sidebar"><div class="brand"><div class="sigil">MAFIA 12</div><h1>DARK OAK</h1><small>MEMBER CONTROL</small></div><nav class="nav"><button class="active" data-page="dashboard">◈ &nbsp; Panel principal</button><button data-page="members">♟ &nbsp; Miembros</button><button data-page="dues">▤ &nbsp; Cuotas semanales</button><button data-page="calculator">▣ &nbsp; Calculadora</button><button data-page="vault">▣ &nbsp; Caja fuerte</button><button data-page="notes">✎ &nbsp; Notas</button></nav><div class="sidefoot">RESPONSABILIDAD · LEALTAD · DISCIPLINA</div></aside><main class="main"><header class="top"><div><div class="eyebrow">SISTEMA DE ADMINISTRACIÓN</div><h2 id="pageTitle">Panel principal</h2><div class="muted" id="today"></div></div><button class="btn" id="logoutBtn">Cerrar sesión ↗</button></header>
 <section id="page-dashboard" class="section active"><div class="stats"><div class="stat"><label>Miembros activos</label><strong id="statActive">0</strong><small>Integrantes en la organización</small></div><div class="stat"><label>Ausentes</label><strong id="statAbsent">0</strong><small>Marcados temporalmente</small></div><div class="stat"><label>Cuotas entregadas</label><strong id="statPaid">0</strong><small>Semana actual</small></div><div class="stat"><label>Cuotas pendientes</label><strong id="statPending">0</strong><small>Se cierran el sábado</small></div></div><div class="panel"><div class="panelhead"><h3>Control semanal de bolsitas</h3><button class="btn" data-goto="dues">Ver cuotas →</button></div><div class="muted" id="weekRange"></div><div class="progress"><span id="progressBar" style="width:0%"></span></div><div id="progressText" class="muted">0 de 0 miembros han entregado.</div></div><div class="panel" style="margin-top:15px"><div class="panelhead"><h3>Ingresos recientes</h3><button class="btn" id="quickAdd">+ Registrar miembro</button></div><div id="recentMembers" class="tablewrap"></div></div></section>
