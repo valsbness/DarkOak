@@ -87,7 +87,7 @@ const LEVEL_REQUIREMENTS = [
   ['madre_money','Entrega a Mafia Madre ($)',5000000,'money'],
   ['cocaine','Cocaína',3000,'number'],['heroin','Heroína',3000,'number'],['marijuana','Marihuana',3000,'number'],
   ['missions','Misiones completadas',1,'number'],['black_market','Nivel de mercado negro',5,'number'],
-  ['yachts','Yates completados con éxito',3,'number'],['jewelries','Joy erías completadas con éxito',6,'number'],
+  ['yachts','Yates completados con éxito',3,'number'],['jewelries','Joyerías completadas con éxito',6,'number'],
   ['sns','SNS Pistol',120,'number'],['vintage','Vintage Pistol',100,'number'],['pistol9','Pistola 9mm',80,'number']
  ]},
  {level_key:'2-3',title:'Nivel 2 → Nivel 3',items:[
