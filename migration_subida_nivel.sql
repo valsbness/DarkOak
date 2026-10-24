@@ -37,3 +37,8 @@ drop policy if exists "Authenticated users can read level progress log" on publi
 create policy "Authenticated users can read level progress log" on public.level_progress_log for select to authenticated using (true);
 drop policy if exists "Authenticated users can insert level progress log" on public.level_progress_log;
 create policy "Authenticated users can insert level progress log" on public.level_progress_log for insert to authenticated with check (true);
+
+-- Permisos explícitos para que los usuarios autenticados puedan usar la sección.
+grant usage on schema public to authenticated;
+grant select, insert, update on table public.level_progress to authenticated;
+grant select, insert on table public.level_progress_log to authenticated;
