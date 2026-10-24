@@ -11,7 +11,7 @@ function escapeHtml(s=''){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','
 function toast(msg){$('#toastRoot').innerHTML=`<div class="toast">${escapeHtml(msg)}</div>`;setTimeout(()=>$('#toastRoot').innerHTML='',3200)}
 function showAuth(msg=''){ $('#authView').classList.remove('hidden');$('#appView').classList.add('hidden');$('#authMsg').textContent=msg }
 function showApp(){ $('#authView').classList.add('hidden');$('#appView').classList.remove('hidden');$('#today').textContent=new Date().toLocaleDateString('es-PA',{weekday:'long',day:'numeric',month:'long',year:'numeric'}); }
-function goto(page){document.querySelectorAll('.section').forEach(x=>x.classList.remove('active'));$('#page-'+page).classList.add('active');document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===page));$('#pageTitle').textContent=({dashboard:'Panel principal',members:'Miembros',dues:'Cuotas semanales',calculator:'Calculadora de compras',vault:'Caja fuerte',notes:'Notas e incidencias'})[page];if(page==='dues')loadDues();if(page==='calculator')renderCalculatorMembers();if(page==='vault')loadVault();if(page==='notes')renderNotes()}
+function goto(page){document.querySelectorAll('.section').forEach(x=>x.classList.remove('active'));$('#page-'+page).classList.add('active');document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===page));$('#pageTitle').textContent=({dashboard:'Panel principal',members:'Miembros',dues:'Cuotas semanales',calculator:'Calculadora de compras',levels:'Subida de nivel',vault:'Caja fuerte',notes:'Notas e incidencias'})[page];if(page==='dues')loadDues();if(page==='calculator')renderCalculatorMembers();if(page==='levels')loadLevelProgress();if(page==='vault')loadVault();if(page==='notes')renderNotes()}
 document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>goto(b.dataset.page));document.querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>goto(b.dataset.goto));$('#quickAdd').onclick=$('#addMember').onclick=()=>memberModal();$('#addNote').onclick=()=>noteModal();$('#logoutBtn').onclick=async()=>{if(db)await db.auth.signOut();user=null;showAuth('Sesión cerrada.')} ;
 $('#memberSearch').oninput=renderMembers;$('#memberFilter').onchange=renderMembers;$('#weekPicker').value=selectedWeek;$('#weekPicker').onchange=()=>{selectedWeek=weekStart(new Date($('#weekPicker').value+'T12:00:00'));$('#weekPicker').value=selectedWeek;loadDues()};$('#currentWeek').onclick=()=>{selectedWeek=weekStart(new Date());$('#weekPicker').value=selectedWeek;loadDues()};
 $('#loginForm').onsubmit=async e=>{e.preventDefault();if(!configured){$('#authMsg').textContent='Primero configura SUPABASE_URL y SUPABASE_ANON_KEY en app.js.';return}$('#authMsg').textContent='Verificando acceso…';const {data,error}=await db.auth.signInWithPassword({email:$('#email').value,password:$('#password').value});if(error){$('#authMsg').textContent='No se pudo iniciar sesión: '+error.message;return}user=data.user;await initApp()};
@@ -81,6 +81,54 @@ async function retireMember(id){const m=members.find(x=>x.id===id);if(!m||!await
 function quickNote(id){noteModal(id)}function noteModal(memberId=null){const opts=members.filter(m=>m.status!=='retirado').map(m=>`<option value="${m.id}" ${m.id===memberId?'selected':''}>${escapeHtml(m.ic_name)}</option>`).join('');modal(`<h3>Añadir nota interna</h3><form id="noteForm"><div class="field"><label>Miembro *</label><select name="member_id" required>${opts}</select></div><div class="field"><label>Tipo</label><select name="category"><option value="observacion">Observación</option><option value="incidencia">Incidencia disciplinaria</option><option value="cuota">Cuota</option><option value="reconocimiento">Reconocimiento</option></select></div><div class="field"><label>Fecha *</label><input type="date" name="note_date" required value="${iso(new Date())}"></div><div class="field"><label>Detalle *</label><textarea name="body" required placeholder="Describe los hechos de forma concreta…"></textarea></div><div class="controls" style="justify-content:flex-end"><button type="button" class="btn" onclick="closeModal()">Cancelar</button><button class="btn primary">Guardar nota</button></div></form>`);$('#noteForm').onsubmit=async e=>{e.preventDefault();const row=Object.fromEntries(new FormData(e.target).entries());row.created_by=user.id;const {error}=await db.from('member_notes').insert(row);if(error){toast('Error: '+error.message);return}closeModal();await loadNotes();toast('Nota guardada.')}}
 function renderNotes(){if(!$('#notesTable'))return;$('#notesTable').innerHTML=notes.length?`<table><thead><tr><th>Fecha</th><th>Miembro</th><th>Tipo</th><th>Detalle</th><th>Acción</th></tr></thead><tbody>${notes.map(n=>`<tr><td>${fmtDate(n.note_date)}</td><td>${escapeHtml(n.members?.ic_name||'Miembro eliminado')}</td><td><span class="pill">${escapeHtml(n.category)}</span></td><td style="white-space:normal;min-width:220px">${escapeHtml(n.body)}</td><td><button class="btn sm danger" onclick="deleteNote('${n.id}')">Eliminar</button></td></tr>`).join('')}</tbody></table>`:'<div class="empty">Todavía no hay notas registradas.</div>'}
 async function deleteNote(id){if(!await askConfirm('¿Eliminar esta nota?','Eliminar nota'))return;const {error}=await db.from('member_notes').delete().eq('id',id);if(error){toast(error.message);return}await loadNotes();toast('Nota eliminada.')}
+
+const LEVEL_REQUIREMENTS = [
+ {level_key:'1-2',title:'Nivel 1 → Nivel 2',items:[
+  ['madre_money','Entrega a Mafia Madre ($)',5000000,'money'],
+  ['cocaine','Cocaína',3000,'number'],['heroin','Heroína',3000,'number'],['marijuana','Marihuana',3000,'number'],
+  ['missions','Misiones completadas',1,'number'],['black_market','Nivel de mercado negro',5,'number'],
+  ['yachts','Yates completados con éxito',3,'number'],['jewelries','Joy erías completadas con éxito',6,'number'],
+  ['sns','SNS Pistol',120,'number'],['vintage','Vintage Pistol',100,'number'],['pistol9','Pistola 9mm',80,'number']
+ ]},
+ {level_key:'2-3',title:'Nivel 2 → Nivel 3',items:[
+  ['madre_money','Entrega a Mafia Madre ($)',15000000,'money'],
+  ['cocaine','Cocaína',6000,'number'],['heroin','Heroína',6000,'number'],['marijuana','Marihuana',6000,'number'],
+  ['missions','Misiones completadas',1,'number'],['black_market','Nivel de mercado negro',10,'number'],
+  ['yachts','Yates completados con éxito',6,'number'],['jewelries','Joy erías completadas con éxito',15,'number'],['banks','Bancos centrales completados',2,'number'],
+  ['sns','SNS Pistol',250,'number'],['vintage','Vintage Pistol',230,'number'],['pistol9','Pistola 9mm',200,'number'],['mini_smg','Mini SMG',80,'number']
+ ]},
+ {level_key:'3-4',title:'Nivel 3 → Nivel 4',items:[
+  ['madre_money','Entrega a Mafia Madre ($)',50000000,'money'],
+  ['cocaine','Cocaína',10000,'number'],['heroin','Heroína',10000,'number'],['marijuana','Marihuana',10000,'number'],
+  ['missions','Misiones completadas',5,'number'],['black_market','Nivel de mercado negro',15,'number'],
+  ['yachts','Yates completados con éxito',20,'number'],['jewelries','Joy erías completadas con éxito',30,'number'],['banks','Bancos centrales completados',6,'number'],
+  ['sns','SNS Pistol',500,'number'],['vintage','Vintage Pistol',480,'number'],['pistol9','Pistola 9mm',400,'number'],['mini_smg','Mini SMG',150,'number'],['micro_smg','Micro SMG',100,'number'],['ak47','AK-47',15,'number']
+ ]}
+];
+let levelRows=[],selectedLevel='1-2';
+function levelActor(){return String(user?.email||'usuario').split('@')[0]||'usuario'}
+function levelFmt(n){return Number(n||0).toLocaleString('es-PA')}
+async function loadLevelProgress(){
+ const summary=$('#levelSummary'),root=$('#levelRequirements');if(!db||!user||!summary||!root)return;
+ summary.innerHTML='<p class="muted">Cargando progreso…</p>';
+ const {data,error}=await db.from('level_progress').select('*').order('level_key').order('created_at');
+ if(error){summary.innerHTML='<p class="muted">No se pudo cargar el progreso. Revisa que hayas ejecutado migration_subida_nivel.sql en Supabase. Detalle: '+escapeHtml(error.message)+'</p>';root.innerHTML='';return}
+ levelRows=data||[];
+ const defaults=LEVEL_REQUIREMENTS.flatMap(group=>group.items.map(item=>({level_key:group.level_key,requirement_key:item[0],title:item[1],target_value:item[2],current_value:0,completed:false,updated_by:user.id})));
+ const have=new Set(levelRows.map(r=>r.level_key+'|'+r.requirement_key));
+ const missing=defaults.filter(r=>!have.has(r.level_key+'|'+r.requirement_key));
+ if(missing.length){const ins=await db.from('level_progress').insert(missing);if(ins.error){root.innerHTML='<p class="muted">No se pudieron inicializar los requisitos: '+escapeHtml(ins.error.message)+'</p>';return}const again=await db.from('level_progress').select('*').order('level_key');if(again.error){root.innerHTML='<p class="muted">Error al actualizar la lista: '+escapeHtml(again.error.message)+'</p>';return}levelRows=again.data||[]}
+ renderLevelProgress();
+}
+function renderLevelProgress(){
+ const summary=$('#levelSummary'),root=$('#levelRequirements');if(!summary||!root)return;
+ summary.innerHTML=LEVEL_REQUIREMENTS.map(g=>{const items=g.items.map(i=>levelRows.find(r=>r.level_key===g.level_key&&r.requirement_key===i[0])).filter(Boolean);const done=items.filter(r=>r.completed||Number(r.current_value)>=Number(r.target_value)).length;const pct=items.length?Math.round(done/items.length*100):0;return '<button type="button" class="level-card '+(selectedLevel===g.level_key?'active':'')+'" data-level-select="'+g.level_key+'"><strong>'+g.title+'</strong><div class="level-progress"><span style="width:'+pct+'%"></span></div><small>'+done+' de '+items.length+' requisitos · '+pct+'%</small></button>'}).join('');
+ summary.querySelectorAll('[data-level-select]').forEach(b=>b.addEventListener('click',()=>{selectedLevel=b.dataset.levelSelect;renderLevelProgress()}));
+ const group=LEVEL_REQUIREMENTS.find(g=>g.level_key===selectedLevel)||LEVEL_REQUIREMENTS[0];
+ root.innerHTML='<div class="level-group"><h4>'+group.title+'</h4><p class="muted">Actualiza la cantidad conseguida y pulsa Guardar. El progreso se comparte con los demás usuarios autorizados.</p>'+group.items.map(item=>{const r=levelRows.find(x=>x.level_key===group.level_key&&x.requirement_key===item[0]);if(!r)return '';const current=Number(r.current_value)||0,target=Number(r.target_value)||0;return '<div class="level-req"><div class="level-req-top"><div><strong>'+escapeHtml(r.title)+'</strong><div class="muted">'+levelFmt(current)+' / '+levelFmt(target)+'</div></div><label>Progreso <input type="number" min="0" step="any" value="'+current+'" data-level-value="'+r.id+'" aria-label="Progreso de '+escapeHtml(r.title)+'"></label></div><div class="level-progress"><span style="width:'+Math.min(100,target>0?current/target*100:0)+'%"></span></div><div class="level-req-actions"><button class="btn primary sm" type="button" data-level-save="'+r.id+'">Guardar</button> '+(current>=target?'<span class="pill paid">Completado</span>':'<span class="pill pending">Pendiente</span>')+'</div></div>'}).join('')+'</div>';
+ root.querySelectorAll('[data-level-save]').forEach(b=>b.addEventListener('click',async()=>{const id=b.dataset.levelSave,input=root.querySelector('[data-level-value="'+id+'"]'),row=levelRows.find(x=>x.id===id);if(!row||!input)return;const next=Math.max(0,Number(input.value)||0),before=Number(row.current_value)||0,done=next>=Number(row.target_value);const upd=await db.from('level_progress').update({current_value:next,completed:done,updated_by:user.id,updated_at:new Date().toISOString()}).eq('id',id);if(upd.error){toast('No se pudo guardar el progreso: '+upd.error.message);return}const log=await db.from('level_progress_log').insert({level_key:row.level_key,requirement_key:row.requirement_key,title:row.title,previous_value:before,new_value:next,change_amount:next-before,completed:done,actor_name:levelActor(),actor_id:user.id});if(log.error){toast('Progreso guardado, pero no se pudo registrar el historial: '+log.error.message)}const fresh=await db.from('level_progress').select('*').order('level_key');if(!fresh.error)levelRows=fresh.data||[];renderLevelProgress();toast('Progreso actualizado.')}));
+}
+
 init();
 async function init(){if(!configured){$('#configWarning').classList.remove('hidden');return}db=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);const {data}=await db.auth.getSession();if(data.session){user=data.session.user;await initApp()}else showAuth()}
 async function initApp(){showApp();await Promise.all([loadMembers(),loadNotes()]);await loadDues()}
