@@ -148,6 +148,87 @@ function renderLevelProgress(){
  root.querySelectorAll('[data-level-save]').forEach(b=>b.addEventListener('click',async()=>{const id=b.dataset.levelSave,input=root.querySelector('[data-level-value="'+id+'"]'),row=levelRows.find(x=>x.id===id);if(!row||!input)return;const next=Math.max(0,Number(input.value)||0),before=Number(row.current_value)||0,done=next>=Number(row.target_value);let manualValue; if(['sns','vintage','pistol9'].includes(row.requirement_key)){const {data:weaponPayments}=await db.from('weekly_dues_payments').select('amount_bags,quota_type,weapon_type').eq('quota_type','weapons');const autoTotal=(weaponPayments||[]).filter(p=>p.weapon_type===row.requirement_key).reduce((sum,p)=>sum+Number(p.amount_bags||0),0);manualValue=Math.max(0,next-autoTotal)}const patch={current_value:next,completed:done,updated_by:user.id,updated_at:new Date().toISOString()};if(manualValue!==undefined)patch.manual_value=manualValue;const upd=await db.from('level_progress').update(patch).eq('id',id);if(upd.error){toast('No se pudo guardar el progreso: '+upd.error.message);return}const log=await db.from('level_progress_log').insert({level_key:row.level_key,requirement_key:row.requirement_key,title:row.title,previous_value:before,new_value:next,change_amount:next-before,completed:done,actor_name:levelActor(),actor_id:user.id});if(log.error){toast('Progreso guardado, pero no se pudo registrar el historial: '+log.error.message)}const fresh=await db.from('level_progress').select('*').order('level_key');if(!fresh.error)levelRows=fresh.data||[];renderLevelProgress();toast('Progreso actualizado.')}));
 }
 
+
+/* Cuotas mixtas: bolsas o armas. Estas funciones sustituyen la vista anterior de cuotas. */
+function dueType(d){return d&&d.quota_type==='weapons'?'weapons':'bags'}
+function dueGoal(d){if(!d)return 300;if(dueType(d)==='weapons'){const defaults={sns:14,vintage:10,pistol9:7};return Number(d.required_weapons||defaults[d.weapon_type]||14)}return Number(d.required_bags||300)}
+function dueWeaponName(type){return ({sns:'SNS',vintage:'Vintage',pistol9:'9 mm'})[type]||'SNS'}
+function duePayments(d){return payments.filter(p=>p.due_id===d.id&&(p.quota_type||'bags')===dueType(d)&&(dueType(d)==='bags'||(p.weapon_type||d.weapon_type)===(d.weapon_type||'sns')))}
+function bagsForDue(d){const list=duePayments(d);if(list.length)return list.reduce((sum,p)=>sum+Number(p.amount_bags||0),0);return dueType(d)==='bags'&&d.delivered?Number(d.required_bags||300):0}
+function renderDues(){
+ const active=members.filter(m=>m.status==='activo');
+ const completed=active.filter(m=>{const d=dues.find(x=>x.member_id===m.id);return d&&bagsForDue(d)>=dueGoal(d)}).length;
+ const planned=active.reduce((sum,m)=>{const d=dues.find(x=>x.member_id===m.id);return sum+(d?dueGoal(d):300)},0);
+ $('#duesMeta').textContent=fmtDate(selectedWeek)+' – '+fmtDate(weekEnd(selectedWeek))+' · '+completed+'/'+active.length+' cuotas completadas · metas combinadas: '+planned;
+ const weaponOptions='<option value="sns">14 SNS</option><option value="vintage">10 Vintage</option><option value="pistol9">7 de 9 mm</option>';
+ $('#duesTable').innerHTML=active.length?'<table><thead><tr><th>Miembro</th><th>Tipo de cuota</th><th>Meta</th><th>Abonado</th><th>Falta / excedente</th><th>Estado</th><th>Acción</th></tr></thead><tbody>'+active.map(m=>{
+  const d=dues.find(x=>x.member_id===m.id);if(!d)return '';
+  const type=dueType(d),goal=dueGoal(d),total=bagsForDue(d),remaining=Math.max(0,goal-total),extra=Math.max(0,total-goal),pct=goal?Math.min(100,Math.round(total/goal*100)):0;
+  return '<tr><td><span class="member-name">'+escapeHtml(m.ic_name)+'</span><span class="sub">'+escapeHtml(m.discord_name||'')+'</span></td><td><select class="due-type-select" data-due-type="'+m.id+'" aria-label="Tipo de cuota de '+escapeHtml(m.ic_name)+'"><option value="bags" '+(type==='bags'?'selected':'')+'>Bolsitas</option><option value="weapons" '+(type==='weapons'?'selected':'')+'>Armas</option></select>'+(type==='weapons'?'<select class="due-weapon-select" data-due-weapon="'+m.id+'" aria-label="Tipo de arma de '+escapeHtml(m.ic_name)+'">'+weaponOptions.replace('value="sns"','value="sns" '+((d.weapon_type||'sns')==='sns'?'selected':'')).replace('value="vintage"','value="vintage" '+(d.weapon_type==='vintage'?'selected':'')).replace('value="pistol9"','value="pistol9" '+(d.weapon_type==='pistol9'?'selected':''))+'</select>':'')+'</td><td>'+goal+(type==='bags'?' bolsitas':' '+dueWeaponName(d.weapon_type||'sns'))+'</td><td><b>'+total+'</b><div class="progress"><span style="width:'+pct+'%"></span></div></td><td>'+(remaining?'Faltan '+remaining:extra?'+'+extra+' excedente':'Completada')+'</td><td><span class="pill '+(total>=goal?'paid':'pending')+'">'+(total>=goal?'COMPLETADA':total?'PARCIAL':'PENDIENTE')+'</span></td><td><button class="btn sm good" onclick="paymentModal(\''+m.id+'\')">+ Abono / historial</button></td></tr>';
+ }).join('')+'</tbody></table>':'<div class="empty">Registra miembros para crear las cuotas.</div>';
+ document.querySelectorAll('[data-due-type]').forEach(el=>el.addEventListener('change',async()=>{
+  const memberId=el.dataset.dueType,d=dues.find(x=>x.member_id===memberId);if(!d)return;
+  const next=el.value,payload=next==='weapons'?{quota_type:'weapons',weapon_type:d.weapon_type||'sns',required_weapons:Number(d.required_weapons||({sns:14,vintage:10,pistol9:7}[d.weapon_type||'sns']))}:{quota_type:'bags',weapon_type:null};
+  const {error}=await db.from('weekly_dues').update(payload).eq('id',d.id);
+  if(error){toast('No se pudo cambiar el tipo de cuota: '+error.message);renderDues();return}
+  Object.assign(d,payload);renderDues();
+ }));
+ document.querySelectorAll('[data-due-weapon]').forEach(el=>el.addEventListener('change',async()=>{
+  const d=dues.find(x=>x.member_id===el.dataset.dueWeapon);if(!d)return;
+  const type=el.value,goal={sns:14,vintage:10,pistol9:7}[type];
+  const {error}=await db.from('weekly_dues').update({weapon_type:type,required_weapons:goal}).eq('id',d.id);
+  if(error){toast('No se pudo cambiar el tipo de arma: '+error.message);renderDues();return}
+  d.weapon_type=type;d.required_weapons=goal;renderDues();
+ }));
+}
+function paymentModal(memberId){
+ const m=members.find(x=>x.id===memberId),d=dues.find(x=>x.member_id===memberId);
+ if(!m||!d){toast('No se encontró la cuota de este miembro.');return}
+ const type=dueType(d),weapon=d.weapon_type||'sns',goal=dueGoal(d),list=duePayments(d),total=bagsForDue(d),remaining=Math.max(0,goal-total),unit=type==='bags'?'bolsitas':dueWeaponName(weapon);
+ const title=type==='bags'?'Cuota de bolsitas':'Cuota de armas · '+dueWeaponName(weapon);
+ modal('<h3>'+title+' — '+escapeHtml(m.ic_name)+'</h3><p class="muted">Semana del '+fmtDate(selectedWeek)+' · Meta '+goal+' '+unit+' · Acumulado <b>'+total+'</b> · '+(remaining?'Faltan '+remaining:'Cuota completada'+(total>goal?' (+'+(total-goal)+' excedente)':''))+'</p><div class="panel" style="padding:12px;margin-bottom:16px"><h4 style="margin:0 0 10px;font-family:Cinzel,serif">Historial de abonos</h4>'+(list.length?'<div class="tablewrap"><table style="min-width:0"><thead><tr><th>Fecha</th><th>Cantidad</th><th>Registró / recibió</th><th>Nota</th><th></th></tr></thead><tbody>'+list.map(p=>'<tr><td>'+fmtDate(p.paid_on)+'</td><td><b>'+Number(p.amount_bags)+' '+unit+'</b></td><td>'+escapeHtml(p.payer_name||'—')+'</td><td>'+escapeHtml(p.note||'—')+'</td><td><button type="button" class="icon-edit" aria-label="Modificar abono" title="Modificar abono" onclick="editPaymentModal(\''+p.id+'\',\''+memberId+'\')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16.5V20h3.5L18 9.5 14.5 6 4 16.5Z"/><path d="m12.8 7.7 3.5 3.5M14.5 6l1.4-1.4a1.5 1.5 0 0 1 2.1 0l1.4 1.4a1.5 1.5 0 0 1 0 2.1L18 9.5"/></svg></button></td></tr>').join('')+'</tbody></table></div>':'<div class="muted">Aún no hay abonos esta semana.</div>')+'</div><form id="paymentForm"><div class="formgrid"><div class="field"><label>Cantidad de '+unit+' *</label><input name="amount_bags" type="number" min="1" step="1" required placeholder="Ej. '+(type==='bags'?'100':'1')+'"></div><div class="field"><label>Fecha del abono *</label><input name="paid_on" type="date" required value="'+iso(new Date())+'"></div><div class="field span2"><label>Quién recibió o registró (opcional)</label><input name="payer_name" placeholder="Nombre del jefe/subjefe"></div><div class="field span2"><label>Nota (opcional)</label><input name="note" placeholder="Ej. entrega parcial"></div></div><div class="controls" style="justify-content:flex-end"><button type="button" class="btn" onclick="closeModal()">Cerrar</button><button class="btn primary" type="submit">Registrar abono</button></div></form>');
+ $('#paymentForm').onsubmit=async e=>{
+  e.preventDefault();const f=new FormData(e.target),amount=Number(f.get('amount_bags'));
+  if(!Number.isInteger(amount)||amount<1){toast('La cantidad debe ser un número entero mayor que cero.');return}
+  const row={due_id:d.id,amount_bags:amount,paid_on:f.get('paid_on'),payer_name:String(f.get('payer_name')||'').trim()||null,note:String(f.get('note')||'').trim()||null,recorded_by:user.id,quota_type:type,weapon_type:type==='weapons'?weapon:null};
+  const {error}=await db.from('weekly_dues_payments').insert(row);
+  if(error){toast('No se pudo registrar el abono: '+error.message);return}
+  const newTotal=total+amount;
+  if(type==='bags'){
+   const upd=await db.from('weekly_dues').update({delivered:newTotal>=goal,delivered_at:newTotal>=goal?row.paid_on:null,recorded_by:user.id}).eq('id',d.id);
+   if(upd.error){toast('Abono guardado, pero no se pudo actualizar el estado: '+upd.error.message);return}
+  }
+  closeModal();await loadDues();if(type==='weapons')await syncWeaponLevelProgress();paymentModal(memberId);toast('Abono registrado correctamente.');
+ };
+}
+function editPaymentModal(paymentId,memberId){
+ const p=payments.find(x=>x.id===paymentId);if(!p){toast('No se encontró ese abono.');return}
+ const isWeapon=(p.quota_type||'bags')==='weapons',unit=isWeapon?dueWeaponName(p.weapon_type):'bolsitas';
+ modal('<h3>Modificar abono</h3><form id="editPaymentForm"><div class="formgrid"><div class="field"><label>Cantidad de '+unit+' *</label><input name="amount_bags" type="number" min="1" step="1" required value="'+Number(p.amount_bags)+'"></div><div class="field"><label>Fecha del abono *</label><input name="paid_on" type="date" required value="'+p.paid_on+'"></div><div class="field span2"><label>Quién recibió o registró (opcional)</label><input name="payer_name" value="'+escapeHtml(p.payer_name||'')+'"></div><div class="field span2"><label>Nota (opcional)</label><input name="note" value="'+escapeHtml(p.note||'')+'"></div></div><div class="controls" style="justify-content:space-between"><button type="button" class="btn danger" onclick="deletePayment(\''+paymentId+'\',\''+memberId+'\')">Borrar abono</button><div class="controls"><button type="button" class="btn" onclick="closeModal()">Cancelar</button><button class="btn primary" type="submit">Guardar cambios</button></div></div></form>');
+ $('#editPaymentForm').onsubmit=async e=>{
+  e.preventDefault();const f=new FormData(e.target),amount=Number(f.get('amount_bags'));
+  if(!Number.isInteger(amount)||amount<1){toast('La cantidad debe ser un número entero mayor que cero.');return}
+  const {error}=await db.from('weekly_dues_payments').update({amount_bags:amount,paid_on:f.get('paid_on'),payer_name:String(f.get('payer_name')||'').trim()||null,note:String(f.get('note')||'').trim()||null}).eq('id',paymentId);
+  if(error){toast('No se pudo modificar el abono: '+error.message);return}
+  closeModal();await loadDues();if(isWeapon)await syncWeaponLevelProgress();paymentModal(memberId);toast('Abono actualizado correctamente.');
+ };
+}
+async function deletePayment(paymentId,memberId){
+ const p=payments.find(x=>x.id===paymentId);if(!p)return;
+ if(!await askConfirm('¿Borrar este abono de '+Number(p.amount_bags)+' '+((p.quota_type||'bags')==='weapons'?dueWeaponName(p.weapon_type):'bolsitas')+'? Esta acción no se puede deshacer.','Eliminar abono'))return;
+ const {error}=await db.from('weekly_dues_payments').delete().eq('id',paymentId);
+ if(error){toast('No se pudo borrar el abono: '+error.message);return}
+ const d=dues.find(x=>x.member_id===memberId);
+ if(d&&dueType(d)==='bags'){
+  const {data:remaining,error:readErr}=await db.from('weekly_dues_payments').select('amount_bags,paid_on,quota_type').eq('due_id',d.id);
+  if(readErr){toast('Abono borrado, pero no se pudo recalcular la cuota: '+readErr.message);return}
+  const bagRows=(remaining||[]).filter(x=>(x.quota_type||'bags')==='bags'),total=bagRows.reduce((sum,x)=>sum+Number(x.amount_bags||0),0),lastDate=bagRows.slice().sort((a,b)=>String(a.paid_on).localeCompare(String(b.paid_on))).at(-1)?.paid_on||null;
+  const upd=await db.from('weekly_dues').update({delivered:total>=dueGoal(d),delivered_at:total>=dueGoal(d)?lastDate:null}).eq('id',d.id);
+  if(upd.error){toast('Abono borrado, pero no se pudo actualizar el estado: '+upd.error.message);return}
+ }
+ closeModal();await loadDues();if((p.quota_type||'bags')==='weapons')await syncWeaponLevelProgress();paymentModal(memberId);toast('Abono eliminado y cuota recalculada.');
+}
+
 init();
 async function init(){if(!configured){$('#configWarning').classList.remove('hidden');return}db=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);const {data}=await db.auth.getSession();if(data.session){user=data.session.user;await initApp()}else showAuth()}
 async function initApp(){showApp();await Promise.all([loadMembers(),loadNotes()]);await loadDues()}
