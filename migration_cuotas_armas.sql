@@ -10,6 +10,12 @@ alter table public.weekly_dues_payments
   add column if not exists quota_type text not null default 'bags',
   add column if not exists weapon_type text;
 
+-- Conservar el progreso manual previo para que las armas aportadas se sumen sin borrar avances existentes.
+alter table public.level_progress add column if not exists manual_value numeric;
+update public.level_progress set manual_value = current_value where manual_value is null;
+alter table public.level_progress alter column manual_value set default 0;
+alter table public.level_progress alter column manual_value set not null;
+
 -- Las cuotas antiguas permanecen como cuota de bolsas; sus abonos no se pierden.
 update public.weekly_dues
 set quota_type = 'bags'
