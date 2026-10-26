@@ -160,7 +160,7 @@ function renderDues(){
  const completed=active.filter(m=>{const d=dues.find(x=>x.member_id===m.id);return d&&bagsForDue(d)>=dueGoal(d)}).length;
  const planned=active.reduce((sum,m)=>{const d=dues.find(x=>x.member_id===m.id);return sum+(d?dueGoal(d):300)},0);
  $('#duesMeta').textContent=fmtDate(selectedWeek)+' – '+fmtDate(weekEnd(selectedWeek))+' · '+completed+'/'+active.length+' cuotas completadas · metas combinadas: '+planned;
- const weaponOptions='<option value="sns">14 SNS</option><option value="vintage">10 Vintage</option><option value="pistol9">7 de 9 mm</option>';
+ const weaponOptions='<option value="sns">14 SNS</option><option value="vintage">10 Vintage</option><option value="pistol9">7 9mm</option>';
  $('#duesTable').innerHTML=active.length?'<table><thead><tr><th>Miembro</th><th>Tipo de cuota</th><th>Meta</th><th>Abonado</th><th>Falta / excedente</th><th>Estado</th><th>Acción</th></tr></thead><tbody>'+active.map(m=>{
   const d=dues.find(x=>x.member_id===m.id);if(!d)return '';
   const type=dueType(d),goal=dueGoal(d),total=bagsForDue(d),remaining=Math.max(0,goal-total),extra=Math.max(0,total-goal),pct=goal?Math.min(100,Math.round(total/goal*100)):0;
